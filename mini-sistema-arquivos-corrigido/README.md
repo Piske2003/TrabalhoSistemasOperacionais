@@ -15,15 +15,27 @@ Aplicação didática em Java 17+ e JavaFX para simular um sistema de arquivos e
 ## Executar no IntelliJ IDEA
 Abra a pasta como projeto Maven e execute `com.minifs.MainApp`. O JavaFX Maven Plugin configura as dependências necessárias.
 
+## Executar no VS Code
+Use `Terminal > Run Task... > Executar Mini Sistema de Arquivos (JavaFX)`. A tarefa chama
+`mvn clean javafx:run`, que configura o module-path e as bibliotecas nativas do JavaFX.
+Evite usar o botão genérico `Run Java` diretamente em `MainApp.java`, pois ele inicia
+a JVM sem o module-path necessário para o JavaFX.
+
 ## Funcionalidades
 - Árvore virtual de diretórios e arquivos.
 - Criação de pastas e arquivos com tamanho em bytes.
 - Disco virtual com 64 blocos de 1 KiB e bitmap de ocupação.
-- Alocação de blocos livres em ordem crescente.
+- Escolha da estratégia de alocação na tela inicial: encadeada, contígua ou indexada.
+- Ao trocar a estratégia, o disco virtual é reiniciado, removendo pastas, arquivos e usuários.
+- A desfragmentação não é exibida para a estratégia indexada, pois seus blocos não dependem de ordem contígua.
+- Alocação contígua em sequência de blocos livres e alocação indexada com um bloco reservado para o índice.
 - Exibição de caminho, tamanho e blocos alocados.
 - Exclusão de arquivos/pastas, liberando recursivamente os blocos.
+- Desfragmentação dos blocos ocupados, mantendo a ordem dos arquivos.
 - Contadores de blocos livres/ocupados, arquivos e diretórios.
 - Testes unitários do serviço de sistema de arquivos.
+- Usuários identificados somente por nome e permissões de leitura, escrita e execução por arquivo.
+- Permissão de exclusão por arquivo; somente usuários com essa permissão podem apagar arquivos.
 
 ## Limitações didáticas
 O conteúdo dos arquivos não é armazenado: o tamanho informado serve para calcular os blocos necessários. Os dados existem somente enquanto a aplicação está aberta. A estratégia de alocação é uma simulação simples de alocação por blocos, não uma implementação de um sistema operacional real.

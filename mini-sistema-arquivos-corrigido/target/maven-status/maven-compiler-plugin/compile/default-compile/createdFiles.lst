@@ -1,0 +1,9 @@
+com\minifs\model\User.class
+com\minifs\MainApp.class
+com\minifs\service\VirtualFileSystem.class
+com\minifs\controller\FileSystemController$FileInput.class
+com\minifs\controller\FileSystemController$PermissionInput.class
+com\minifs\model\Permission.class
+com\minifs\model\AllocationStrategy.class
+com\minifs\controller\FileSystemController.class
+com\minifs\model\FsNode.class
