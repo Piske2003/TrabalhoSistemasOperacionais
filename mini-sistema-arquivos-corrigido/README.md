@@ -16,10 +16,15 @@ Aplicação didática em Java 17+ e JavaFX para simular um sistema de arquivos e
 Abra a pasta como projeto Maven e execute `com.minifs.MainApp`. O JavaFX Maven Plugin configura as dependências necessárias.
 
 ## Executar no VS Code
-Use `Terminal > Run Task... > Executar Mini Sistema de Arquivos (JavaFX)`. A tarefa chama
-`mvn clean javafx:run`, que configura o module-path e as bibliotecas nativas do JavaFX.
+Abra no VS Code a pasta `TrabalhoSistemasOperacionais` (ou diretamente
+`mini-sistema-arquivos-corrigido`) e use `Terminal > Run Task... >
+Executar Mini Sistema de Arquivos (JavaFX)`. A tarefa chama
+`mvn javafx:run` dentro da pasta Maven, configurando o module-path e as
+bibliotecas nativas do JavaFX.
 Evite usar o botão genérico `Run Java` diretamente em `MainApp.java`, pois ele inicia
-a JVM sem o module-path necessário para o JavaFX.
+a JVM sem o module-path necessário para o JavaFX. Use a tarefa
+`Executar Mini Sistema de Arquivos (JavaFX)` em `Terminal > Run Task...`, que executa
+o Maven com o plugin JavaFX e inclui os módulos e as bibliotecas nativas necessários.
 
 ## Funcionalidades
 - Árvore virtual de diretórios e arquivos.

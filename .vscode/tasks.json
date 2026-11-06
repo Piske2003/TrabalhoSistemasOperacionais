@@ -1,0 +1,17 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Executar Mini Sistema de Arquivos (JavaFX)",
+            "type": "shell",
+            "command": "mvn",
+            "args": [
+                "javafx:run"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}\\mini-sistema-arquivos-corrigido"
+            },
+            "problemMatcher": []
+        }
+    ]
+}

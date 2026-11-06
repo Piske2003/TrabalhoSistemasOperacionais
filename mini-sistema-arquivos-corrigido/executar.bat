@@ -18,6 +18,15 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
-call mvn clean javafx:run
-if errorlevel 1 echo A execucao falhou. Confira as mensagens acima.
+echo Iniciando o JavaFX...
+echo.
+call mvn javafx:run
+if errorlevel 1 (
+  echo.
+  echo A execucao falhou.
+  echo Se houver outra instancia aberta, feche-a e tente novamente.
+  echo Confira as mensagens acima para mais detalhes.
+  pause
+  exit /b 1
+)
 pause
