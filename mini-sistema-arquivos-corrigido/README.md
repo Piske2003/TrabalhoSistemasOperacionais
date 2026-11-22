@@ -41,6 +41,8 @@ o Maven com o plugin JavaFX e inclui os módulos e as bibliotecas nativas necess
 - Testes unitários do serviço de sistema de arquivos.
 - Usuários identificados somente por nome e permissões de leitura, escrita e execução por arquivo.
 - Permissão de exclusão por arquivo; somente usuários com essa permissão podem apagar arquivos.
+- Representação visual interativa do Slack Space (fragmentação interna) proporcional em cada bloco alocado.
+- Mapeamento detalhado dos blocos de dados úteis versus espaço desperdiçado de folga no último bloco do arquivo.
 
 ## Limitações didáticas
 O conteúdo dos arquivos não é armazenado: o tamanho informado serve para calcular os blocos necessários. Os dados existem somente enquanto a aplicação está aberta. A estratégia de alocação é uma simulação simples de alocação por blocos, não uma implementação de um sistema operacional real.
