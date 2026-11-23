@@ -24,15 +24,17 @@ public class FileSystemController {
     private final Label summary = new Label();
     private final TextArea details = new TextArea();
     private final ComboBox<AllocationStrategy> allocationStrategy = new ComboBox<>();
+    private final MenuButton loggedUser = new MenuButton();
     private AllocationStrategy selectedAllocationStrategy = AllocationStrategy.LINKED;
 
     public Parent getMainView() {
         BorderPane root = new BorderPane();
         root.setPadding(new Insets(16));
         root.setStyle("-fx-background-color: #0d1117;");
+        root.getStylesheets().add(getClass().getResource("/minifs.css").toExternalForm());
 
         // Cabeçalho Tecnológico com o novo título solicitado
-        VBox header = new VBox(4);
+        VBox headerText = new VBox(4);
         Label title = new Label("MINI GERENCIADOR DE ARQUIVOS - GERENCIAMENTO DE ESPACO EM KERNEL");
         title.setFont(Font.font("Consolas", FontWeight.BOLD, 20));
         title.setStyle("-fx-text-fill: #00ff66;");
@@ -40,7 +42,26 @@ public class FileSystemController {
         Label subtitle = new Label("Simulador de Alocação de Blocos, Estruturas de Diretórios e Slack Space");
         subtitle.setFont(Font.font("Consolas", 12));
         subtitle.setStyle("-fx-text-fill: #8b949e;");
-        header.getChildren().addAll(title, subtitle);
+        headerText.getChildren().addAll(title, subtitle);
+
+        Label sessionLabel = new Label("USUÁRIO LOGADO");
+        sessionLabel.setFont(Font.font("Consolas", FontWeight.BOLD, 10));
+        sessionLabel.setStyle("-fx-text-fill: #8b949e;");
+        loggedUser.setMaxWidth(Double.MAX_VALUE);
+        loggedUser.setId("logged-user");
+        loggedUser.setTextFill(Color.WHITE);
+        loggedUser.setStyle("-fx-background-color: #21262d; -fx-text-fill: #ffffff; "
+                + "-fx-font-family: 'Consolas'; -fx-font-weight: bold; -fx-border-color: #30363d; "
+                + "-fx-border-radius: 5; -fx-background-radius: 5;");
+        refreshLoggedUserMenu();
+
+        VBox session = new VBox(4, sessionLabel, loggedUser);
+        session.setAlignment(Pos.CENTER_RIGHT);
+        session.setMinWidth(190);
+
+        BorderPane header = new BorderPane();
+        header.setCenter(headerText);
+        header.setRight(session);
         root.setTop(header);
 
         HBox main = new HBox(14);
@@ -62,15 +83,16 @@ public class FileSystemController {
         tree.setStyle("-fx-background-color: #161b22; -fx-control-inner-background: #161b22; -fx-text-fill: #c9d1d9;");
         VBox.setVgrow(tree, Priority.ALWAYS);
 
-        Button user = createTechButton("Definir Usuário Atual");
         Button folder = createTechButton("+ Nova Pasta");
         Button file = createTechButton("+ Novo Arquivo");
+        Button resizeFile = createTechButton("Alterar Tamanho do Arquivo");
         Button permissions = createTechButton("Atribuir Permissões");
         Button delete = createTechButton("Excluir Selecionado");
         Button defragment = createTechButton("Desfragmentar Blocos");
 
         allocationStrategy.getItems().addAll(AllocationStrategy.values());
         allocationStrategy.setValue(AllocationStrategy.LINKED);
+        allocationStrategy.setId("allocation-strategy");
         allocationStrategy.setMaxWidth(Double.MAX_VALUE);
         allocationStrategy.setStyle("-fx-background-color: #21262d; -fx-text-fill: #c9d1d9; -fx-font-family: 'Consolas';");
         
@@ -79,9 +101,9 @@ public class FileSystemController {
             updateDefragmentationVisibility(defragment);
         });
 
-        user.setOnAction(e -> setCurrentUser());
         folder.setOnAction(e -> createDirectory());
         file.setOnAction(e -> createFile());
+        resizeFile.setOnAction(e -> resizeSelectedFile());
         delete.setOnAction(e -> deleteSelected());
         defragment.setOnAction(e -> defragment());
         permissions.setOnAction(e -> assignPermissions());
@@ -90,7 +112,7 @@ public class FileSystemController {
         stratLabel.setFont(Font.font("Consolas", 11));
         stratLabel.setStyle("-fx-text-fill: #8b949e;");
 
-        left.getChildren().addAll(treeTitle, tree, stratLabel, allocationStrategy, user, folder, file, permissions, delete, defragment);
+        left.getChildren().addAll(treeTitle, tree, stratLabel, allocationStrategy, folder, file, resizeFile, permissions, delete, defragment);
 
         // Painel Direito (Grid de Blocos do Disco e Logs/Detalhes)
         VBox right = new VBox(12);
@@ -232,6 +254,36 @@ public class FileSystemController {
         });
     }
 
+    private void resizeSelectedFile() {
+        TreeItem<FsNode> item = tree.getSelectionModel().getSelectedItem();
+        if (item == null || item.getValue().isDirectory()) {
+            error("Selecione um arquivo para alterar o tamanho.");
+            return;
+        }
+
+        FsNode file = item.getValue();
+        TextInputDialog dialog = new TextInputDialog(String.valueOf(file.getSizeBytes()));
+        dialog.setTitle("Alterar tamanho do arquivo");
+        dialog.setHeaderText("Arquivo: " + file.getName());
+        dialog.setContentText("Novo tamanho (bytes):");
+        dialog.showAndWait().ifPresent(value -> {
+            try {
+                int previousSize = file.getSizeBytes();
+                int newSize = Integer.parseInt(value.trim());
+                fs.resizeFile(file, newSize);
+                refreshTree(file);
+                showDetails(file);
+                refreshDisk(file);
+                status.setText(">>> Tamanho de " + file.getName() + " alterado de "
+                        + previousSize + " para " + newSize + " bytes. Blocos realocados.");
+            } catch (NumberFormatException ex) {
+                error("Informe um tamanho inteiro válido em bytes.");
+            } catch (Exception ex) {
+                error(ex.getMessage());
+            }
+        });
+    }
+
     private void changeAllocationStrategy() {
         AllocationStrategy newValue = allocationStrategy.getValue();
         if (newValue == null || newValue == selectedAllocationStrategy) return;
@@ -246,6 +298,7 @@ public class FileSystemController {
         }
         selectedAllocationStrategy = newValue;
         fs.reset();
+        refreshLoggedUserMenu();
         tree.setRoot(makeTree(fs.getRoot()));
         tree.getRoot().setExpanded(true);
         details.setText(">>> Sistema reiniciado. Selecione um item.");
@@ -425,16 +478,53 @@ public class FileSystemController {
 
     private record FileBlockInfo(String owner, int usedSpace, int slackSpace) {}
 
-    private void setCurrentUser() {
-        TextInputDialog dialog = new TextInputDialog(fs.getCurrentUser().username());
-        dialog.setTitle("Identidade");
-        dialog.setHeaderText("Alterar Usuário Ativo do Kernel");
-        dialog.setContentText("Username:");
+    private void refreshLoggedUserMenu() {
+        loggedUser.setText(fs.getCurrentUser().username());
+        loggedUser.getItems().clear();
+
+        for (User user : fs.getUsers()) {
+            MenuItem option = new MenuItem(user.equals(fs.getCurrentUser())
+                    ? "✓ " + user.username()
+                    : "   " + user.username());
+            option.setDisable(user.equals(fs.getCurrentUser()));
+            option.setOnAction(event -> logInAs(user));
+            loggedUser.getItems().add(option);
+        }
+
+        loggedUser.getItems().add(new SeparatorMenuItem());
+        MenuItem addUser = new MenuItem("+ Adicionar novo usuário");
+        addUser.setOnAction(event -> addAndLogInUser());
+        loggedUser.getItems().add(addUser);
+    }
+
+    private void logInAs(User user) {
+        try {
+            fs.setCurrentUser(user);
+            refreshLoggedUserMenu();
+            refreshDisk();
+            status.setText(">>> Usuário logado: " + user.username());
+        } catch (Exception ex) {
+            error(ex.getMessage());
+        }
+    }
+
+    private void addAndLogInUser() {
+        TextInputDialog dialog = new TextInputDialog();
+        dialog.setTitle("Novo usuário");
+        dialog.setHeaderText("Cadastrar e entrar com um novo usuário");
+        dialog.setContentText("Nome do usuário:");
         dialog.showAndWait().ifPresent(name -> {
             try {
-                fs.setCurrentUser(name);
+                User previous = fs.getUsers().stream()
+                        .filter(user -> user.username().equalsIgnoreCase(name.trim()))
+                        .findFirst().orElse(null);
+                User user = fs.createUser(name);
+                fs.setCurrentUser(user);
+                refreshLoggedUserMenu();
                 refreshDisk();
-                status.setText(">>> Usuário ativo alterado para: " + fs.getCurrentUser().username());
+                status.setText(previous == null
+                        ? ">>> Usuário criado e conectado: " + user.username()
+                        : ">>> Usuário logado: " + user.username());
             } catch (Exception ex) {
                 error(ex.getMessage());
             }

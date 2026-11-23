@@ -6,4 +6,5 @@ com\minifs\controller\FileSystemController$PermissionInput.class
 com\minifs\model\Permission.class
 com\minifs\model\AllocationStrategy.class
 com\minifs\controller\FileSystemController.class
+com\minifs\controller\FileSystemController$FileBlockInfo.class
 com\minifs\model\FsNode.class

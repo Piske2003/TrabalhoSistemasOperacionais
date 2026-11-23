@@ -10,7 +10,7 @@ import java.util.Map;
 public final class FsNode {
     private final String name;
     private final boolean directory;
-    private final int sizeBytes;
+    private int sizeBytes;
     private final List<Integer> blocks = new ArrayList<>();
     private final List<FsNode> children = new ArrayList<>();
     private final User owner;
@@ -38,6 +38,12 @@ public final class FsNode {
     public boolean isDirectory() { return directory; }
 
     public int getSizeBytes() { return sizeBytes; }
+
+    public void setSizeBytes(int sizeBytes) {
+        if (directory) throw new IllegalStateException("Diretórios não possuem tamanho de arquivo.");
+        if (sizeBytes < 0) throw new IllegalArgumentException("O tamanho do arquivo não pode ser negativo.");
+        this.sizeBytes = sizeBytes;
+    }
 
     public List<Integer> getBlocks() { return Collections.unmodifiableList(blocks); }
 

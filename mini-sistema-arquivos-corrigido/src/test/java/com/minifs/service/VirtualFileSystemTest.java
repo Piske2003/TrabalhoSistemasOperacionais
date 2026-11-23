@@ -105,4 +105,69 @@ class VirtualFileSystemTest {
         fs.delete(file);
         assertEquals(0, fs.countFiles(fs.getRoot()));
     }
+
+    @Test void rejectsInvalidSizesAndInsufficientSpaceWithoutChangingDisk() {
+        VirtualFileSystem fs = new VirtualFileSystem(2, 1024);
+
+        assertThrows(IllegalArgumentException.class,
+                () -> fs.createFile(fs.getRoot(), "negative.txt", -1));
+        assertThrows(IllegalStateException.class,
+                () -> fs.createFile(fs.getRoot(), "huge.txt", Integer.MAX_VALUE));
+        assertEquals(0, fs.getUsedBlocks());
+        assertEquals(0, fs.countFiles(fs.getRoot()));
+    }
+
+    @Test void deletingDirectoryChecksPermissionsBeforeReleasingAnyBlock() {
+        VirtualFileSystem fs = new VirtualFileSystem(8, 1024);
+        FsNode directory = fs.createDirectory(fs.getRoot(), "docs");
+        FsNode first = fs.createFile(directory, "first.txt", 1024);
+        FsNode second = fs.createFile(directory, "second.txt", 1024);
+        User guest = fs.createUser("convidado");
+        fs.assignPermissions(second, guest, java.util.Set.of(Permission.READ));
+        fs.setCurrentUser(guest);
+
+        assertThrows(IllegalStateException.class, () -> fs.delete(directory));
+        assertEquals(2, fs.getUsedBlocks());
+        assertEquals(List.of(0), first.getBlocks());
+        assertEquals(List.of(1), second.getBlocks());
+    }
+
+    @Test void resizesFileAndReallocatesItsBlocks() {
+        VirtualFileSystem fs = new VirtualFileSystem(8, 1024);
+        FsNode file = fs.createFile(fs.getRoot(), "data.bin", 500, AllocationStrategy.INDEXED);
+
+        fs.resizeFile(file, 2500);
+        assertEquals(2500, file.getSizeBytes());
+        assertEquals(3, file.getBlocks().size());
+        assertNotNull(file.getIndexBlock());
+        assertEquals(4, fs.getUsedBlocks());
+
+        fs.resizeFile(file, 100);
+        assertEquals(100, file.getSizeBytes());
+        assertEquals(1, file.getBlocks().size());
+        assertEquals(2, fs.getUsedBlocks());
+    }
+
+    @Test void failedResizePreservesOriginalSizeAndAllocation() {
+        VirtualFileSystem fs = new VirtualFileSystem(3, 1024);
+        FsNode file = fs.createFile(fs.getRoot(), "data.bin", 1024);
+        List<Integer> originalBlocks = List.copyOf(file.getBlocks());
+
+        assertThrows(IllegalStateException.class, () -> fs.resizeFile(file, 4096));
+        assertEquals(1024, file.getSizeBytes());
+        assertEquals(originalBlocks, file.getBlocks());
+        assertEquals(1, fs.getUsedBlocks());
+    }
+
+    @Test void resizeRequiresWritePermission() {
+        VirtualFileSystem fs = new VirtualFileSystem(4, 1024);
+        FsNode file = fs.createFile(fs.getRoot(), "data.bin", 100);
+        User guest = fs.createUser("convidado");
+        fs.assignPermissions(file, guest, java.util.Set.of(Permission.READ));
+        fs.setCurrentUser(guest);
+
+        assertThrows(IllegalStateException.class, () -> fs.resizeFile(file, 2000));
+        assertEquals(100, file.getSizeBytes());
+        assertEquals(List.of(0), file.getBlocks());
+    }
 }

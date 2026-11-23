@@ -1,0 +1,7 @@
+#logged-user > .label {
+    -fx-text-fill: white;
+}
+
+#allocation-strategy > .list-cell {
+    -fx-text-fill: white;
+}

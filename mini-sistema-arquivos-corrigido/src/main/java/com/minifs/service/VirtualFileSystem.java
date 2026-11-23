@@ -1,175 +1,236 @@
 package com.minifs.service;
 
-import com.minifs.model.FsNode;
 import com.minifs.model.AllocationStrategy;
+import com.minifs.model.FsNode;
 import com.minifs.model.Permission;
 import com.minifs.model.User;
-import org.junit.jupiter.api.Test;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.EnumSet;
 import java.util.List;
-import static org.junit.jupiter.api.Assertions.*;
+import java.util.Set;
 
-class VirtualFileSystemTest {
-    @Test void createsFileAndAllocatesBlocks() {
-        VirtualFileSystem fs = new VirtualFileSystem(8, 1024);
-        FsNode file = fs.createFile(fs.getRoot(), "a.txt", 1500);
-        assertEquals(2, file.getBlocks().size());
-        assertEquals(2, fs.getUsedBlocks());
-        assertEquals(6, fs.getFreeBlocks());
-    }
-    @Test void contiguousAllocationUsesAdjacentBlocks() {
-        VirtualFileSystem fs = new VirtualFileSystem(8, 1024);
-        FsNode file = fs.createFile(fs.getRoot(), "a.txt", 2500, AllocationStrategy.CONTIGUOUS);
+/** Sistema de arquivos didático mantido inteiramente em memória. */
+public final class VirtualFileSystem {
+    private final boolean[] bitmap;
+    private final int blockSize;
+    private final List<User> users = new ArrayList<>();
+    private FsNode root;
+    private User currentUser;
 
-        assertEquals(List.of(0, 1, 2), file.getBlocks());
-        assertEquals(3, fs.getUsedBlocks());
-    }
-    @Test void indexedAllocationReservesAnIndexBlock() {
-        VirtualFileSystem fs = new VirtualFileSystem(8, 1024);
-        FsNode file = fs.createFile(fs.getRoot(), "a.txt", 1500, AllocationStrategy.INDEXED);
-
-        assertEquals(2, file.getBlocks().size());
-        assertNotNull(file.getIndexBlock());
-        assertEquals(3, fs.getUsedBlocks());
-    }
-    @Test void resetClearsFilesAndUsers() {
-        VirtualFileSystem fs = new VirtualFileSystem(8, 1024);
-        fs.createFile(fs.getRoot(), "a.txt", 1024);
-        fs.createUser("convidado");
-
-        fs.reset();
-
-        assertEquals(0, fs.countFiles(fs.getRoot()));
-        assertEquals(1, fs.getUsers().size());
-        assertEquals("admin", fs.getCurrentUser().username());
-        assertEquals(8, fs.getFreeBlocks());
-    }
-    @Test void deletingFileFreesBlocks() {
-        VirtualFileSystem fs = new VirtualFileSystem(8, 1024);
-        FsNode file = fs.createFile(fs.getRoot(), "a.txt", 1500);
-        fs.delete(file);
-        assertEquals(0, fs.getUsedBlocks());
-        assertEquals(8, fs.getFreeBlocks());
-    }
-    @Test void rejectsDuplicateNames() {
-        VirtualFileSystem fs = new VirtualFileSystem(8, 1024);
-        fs.createDirectory(fs.getRoot(), "docs");
-        assertThrows(IllegalArgumentException.class, () -> fs.createDirectory(fs.getRoot(), "docs"));
-    }
-    @Test void defragmentationCompactsBlocksAndPreservesFileSizes() {
-        VirtualFileSystem fs = new VirtualFileSystem(8, 1024);
-        FsNode first = fs.createFile(fs.getRoot(), "a.txt", 1024);
-        FsNode second = fs.createFile(fs.getRoot(), "b.txt", 2048);
-        fs.delete(first);
-
-        assertEquals(List.of(1, 2), second.getBlocks());
-        assertEquals(2, fs.defragment());
-        assertEquals(List.of(0, 1), second.getBlocks());
-        assertTrue(fs.isUsed(0));
-        assertTrue(fs.isUsed(1));
-        assertFalse(fs.isUsed(2));
-    }
-    @Test void assignsPermissionsToFileByUsername() {
-        VirtualFileSystem fs = new VirtualFileSystem(8, 1024);
-        User owner = fs.getCurrentUser();
-        FsNode file = fs.createFile(fs.getRoot(), "a.txt", 10);
-        User guest = fs.createUser("convidado");
-
-        assertTrue(file.hasPermission(guest, Permission.DELETE));
-        fs.assignPermissions(file, guest, java.util.Set.of(Permission.READ));
-
-        assertEquals(owner, file.getOwner());
-        assertTrue(file.hasPermission(guest, Permission.READ));
-        assertFalse(file.hasPermission(guest, Permission.WRITE));
-        assertFalse(file.hasPermission(guest, Permission.DELETE));
-        assertTrue(file.hasPermission(owner, Permission.EXECUTE));
-    }
-    @Test void onlyFileCreatorCanChangePermissions() {
-        VirtualFileSystem fs = new VirtualFileSystem(8, 1024);
-        FsNode file = fs.createFile(fs.getRoot(), "a.txt", 10);
-        User guest = fs.createUser("convidado");
-        fs.setCurrentUser(guest);
-
-        assertThrows(IllegalStateException.class,
-                () -> fs.assignPermissions(file, guest, java.util.Set.of(Permission.READ)));
-    }
-    @Test void deletesOnlyWhenCurrentUserHasDeletePermission() {
-        VirtualFileSystem fs = new VirtualFileSystem(8, 1024);
-        FsNode file = fs.createFile(fs.getRoot(), "a.txt", 10);
-        User guest = fs.createUser("convidado");
-        fs.assignPermissions(file, guest, java.util.Set.of(Permission.READ));
-        fs.setCurrentUser(guest);
-
-        assertThrows(IllegalStateException.class, () -> fs.delete(file));
-
-        fs.setCurrentUser(file.getOwner());
-        fs.delete(file);
-        assertEquals(0, fs.countFiles(fs.getRoot()));
+    public VirtualFileSystem(int blockCount, int blockSize) {
+        if (blockCount <= 0 || blockSize <= 0) throw new IllegalArgumentException("Quantidade e tamanho dos blocos devem ser positivos.");
+        bitmap = new boolean[blockCount];
+        this.blockSize = blockSize;
+        reset();
     }
 
-// Métodos para suporte à interface e cálculo de Slack Space
-public int getTotalBlocks() {
-    return bitmap.length;
-}
+    public FsNode getRoot() { return root; }
+    public int getBlockCount() { return bitmap.length; }
+    public int getBlockSize() { return blockSize; }
+    public boolean isUsed(int block) { return block >= 0 && block < bitmap.length && bitmap[block]; }
+    public int getUsedBlocks() { return bitmap.length - getFreeBlocks(); }
+    public int getFreeBlocks() { int free = 0; for (boolean used : bitmap) if (!used) free++; return free; }
+    public User getCurrentUser() { return currentUser; }
+    public List<User> getUsers() { return Collections.unmodifiableList(users); }
 
-public boolean isBlockAllocated(int blockIndex) {
-    if (blockIndex < 0 || blockIndex >= bitmap.length) return false;
-    return bitmap[blockIndex];
-}
+    public void reset() {
+        Arrays.fill(bitmap, false);
+        users.clear();
+        currentUser = new User("admin");
+        users.add(currentUser);
+        root = new FsNode("raiz", true, 0, currentUser);
+    }
 
-public String getBlockOwner(int blockIndex) {
-    if (!isBlockAllocated(blockIndex)) return null;
-    // Percorre recursivamente os nós para encontrar qual arquivo alocou este bloco
-    return findOwnerRecursive(root, blockIndex);
-}
+    public User createUser(String username) {
+        User candidate = new User(username);
+        User existing = findUser(candidate.username());
+        if (existing != null) return existing;
+        users.add(candidate);
+        grantDefaultPermissions(root, candidate);
+        return candidate;
+    }
 
-private String findOwnerRecursive(FsNode node, int blockIndex) {
-    if (!node.isDirectory()) {
-        if (node.getAllocatedBlocks().contains(blockIndex) || 
-            (node.getIndexBlock() != null && node.getIndexBlock() == blockIndex)) {
-            return node.getName();
+    public void setCurrentUser(String username) { currentUser = createUser(username); }
+    public void setCurrentUser(User user) {
+        if (user == null) throw new IllegalArgumentException("Usuário é obrigatório.");
+        User existing = findUser(user.username());
+        if (existing == null) throw new IllegalArgumentException("Usuário não cadastrado.");
+        currentUser = existing;
+    }
+
+    public FsNode createDirectory(FsNode parent, String name) {
+        validateParentAndName(parent, name);
+        FsNode directory = new FsNode(name.trim(), true, 0, currentUser);
+        parent.addChild(directory);
+        return directory;
+    }
+
+    public FsNode createFile(FsNode parent, String name, int sizeBytes) {
+        return createFile(parent, name, sizeBytes, AllocationStrategy.LINKED);
+    }
+
+    public FsNode createFile(FsNode parent, String name, int sizeBytes, AllocationStrategy strategy) {
+        validateParentAndName(parent, name);
+        if (sizeBytes < 0) throw new IllegalArgumentException("O tamanho do arquivo não pode ser negativo.");
+        if (strategy == null) throw new IllegalArgumentException("Selecione uma estratégia de alocação.");
+        long dataCountLong = sizeBytes == 0 ? 0 : ((long) sizeBytes + blockSize - 1) / blockSize;
+        long requiredLong = dataCountLong + (strategy == AllocationStrategy.INDEXED ? 1 : 0);
+        if (requiredLong > getFreeBlocks()) throw new IllegalStateException("Não há blocos livres suficientes.");
+        int dataCount = (int) dataCountLong;
+        int required = (int) requiredLong;
+
+        List<Integer> allocated = strategy == AllocationStrategy.CONTIGUOUS ? findContiguousBlocks(dataCount) : findFreeBlocks(required);
+        if (allocated == null) throw new IllegalStateException("Não existe uma sequência contígua de blocos livres suficiente.");
+        FsNode file = new FsNode(name.trim(), false, sizeBytes, currentUser, strategy);
+        if (strategy == AllocationStrategy.INDEXED) {
+            file.setIndexBlock(allocated.remove(0));
+            bitmap[file.getIndexBlock()] = true;
         }
-    } else {
-        for (FsNode child : node.getChildren()) {
-            String owner = findOwnerRecursive(child, blockIndex);
-            if (owner != null) return owner;
+        for (int block : allocated) { bitmap[block] = true; file.addBlock(block); }
+        for (User user : users) file.setPermissions(user, EnumSet.allOf(Permission.class));
+        parent.addChild(file);
+        return file;
+    }
+
+    public void assignPermissions(FsNode file, User user, Set<Permission> permissions) {
+        if (file == null || file.isDirectory()) throw new IllegalArgumentException("Selecione um arquivo válido.");
+        if (!currentUser.equals(file.getOwner())) throw new IllegalStateException("Apenas o criador pode alterar as permissões.");
+        if (user == null || findUser(user.username()) == null) throw new IllegalArgumentException("Usuário não cadastrado.");
+        file.setPermissions(user, permissions);
+    }
+
+    public void resizeFile(FsNode file, int newSizeBytes) {
+        if (file == null || file.isDirectory()) throw new IllegalArgumentException("Selecione um arquivo válido.");
+        if (newSizeBytes < 0) throw new IllegalArgumentException("O tamanho do arquivo não pode ser negativo.");
+        if (!file.hasPermission(currentUser, Permission.WRITE)) {
+            throw new IllegalStateException("O usuário atual não possui permissão de escrita neste arquivo.");
+        }
+        if (file.getSizeBytes() == newSizeBytes) return;
+
+        boolean[] previousBitmap = bitmap.clone();
+        List<Integer> previousBlocks = new ArrayList<>(file.getBlocks());
+        Integer previousIndexBlock = file.getIndexBlock();
+
+        try {
+            releaseFileBlocks(file);
+            allocateBlocks(file, newSizeBytes, file.getAllocationStrategy());
+            file.setSizeBytes(newSizeBytes);
+        } catch (RuntimeException exception) {
+            System.arraycopy(previousBitmap, 0, bitmap, 0, bitmap.length);
+            file.replaceBlocks(previousBlocks);
+            file.setIndexBlock(previousIndexBlock);
+            throw exception;
         }
     }
-    return null;
-}
 
-public int getBlockSlackSpace(int blockIndex) {
-    if (!isBlockAllocated(blockIndex)) return 0;
-    
-    // Encontra o nó do arquivo dono deste bloco
-    FsNode fileNode = findFileByBlock(root, blockIndex);
-    if (fileNode == null || fileNode.isDirectory()) return 0;
-    
-    List<Integer> blocks = fileNode.getAllocatedBlocks();
-    if (blocks.isEmpty()) return 0;
-    
-    // O Slack Space ocorre tipicamente no ÚLTIMO bloco de dados do arquivo
-    int lastBlock = blocks.get(blocks.size() - 1);
-    if (blockIndex == lastBlock) {
-        int fileSize = fileNode.getSize();
-        int remainder = fileSize % blockSize;
-        return (remainder == 0) ? 0 : (blockSize - remainder);
+    public void delete(FsNode node) {
+        if (node == null || node == root || node.getParent() == null) throw new IllegalArgumentException("Não é possível excluir esse item.");
+        ensureDeletePermission(node);
+        releaseRecursively(node);
+        node.getParent().removeChild(node);
     }
-    
-    return 0; // Blocos intermediários ou bloco de índice estão 100% preenchidos/utilizados
-}
 
-private FsNode findFileByBlock(FsNode node, int blockIndex) {
-    if (!node.isDirectory()) {
-        if (node.getAllocatedBlocks().contains(blockIndex) || 
-            (node.getIndexBlock() != null && node.getIndexBlock() == blockIndex)) {
-            return node.getName().equals("index") ? null : node;
+    public int defragment() {
+        List<FsNode> files = new ArrayList<>();
+        collectFiles(root, files);
+        boolean[] compacted = new boolean[bitmap.length];
+        int next = 0, moved = 0;
+        for (FsNode file : files) {
+            if (file.getIndexBlock() != null) {
+                if (file.getIndexBlock() != next) moved++;
+                file.setIndexBlock(next); compacted[next++] = true;
+            }
+            List<Integer> blocks = new ArrayList<>();
+            for (int old : file.getBlocks()) { if (old != next) moved++; blocks.add(next); compacted[next++] = true; }
+            file.replaceBlocks(blocks);
         }
-    } else {
-        for (FsNode child : node.getChildren()) {
-            FsNode found = findFileByBlock(child, blockIndex);
-            if (found != null) return found;
-        }
+        System.arraycopy(compacted, 0, bitmap, 0, bitmap.length);
+        return moved;
     }
-    return null;
-}
+
+    public int countFiles(FsNode node) {
+        if (node == null) return 0;
+        if (!node.isDirectory()) return 1;
+        return node.getChildren().stream().mapToInt(this::countFiles).sum();
+    }
+    public int countDirectories(FsNode node) {
+        if (node == null || !node.isDirectory()) return 0;
+        return 1 + node.getChildren().stream().mapToInt(this::countDirectories).sum();
+    }
+    public String pathOf(FsNode node) {
+        if (node == null) throw new IllegalArgumentException("Item inválido.");
+        List<String> parts = new ArrayList<>();
+        for (FsNode current = node; current != null && current != root; current = current.getParent()) parts.add(current.getName());
+        Collections.reverse(parts);
+        return parts.isEmpty() ? "/" : "/" + String.join("/", parts);
+    }
+
+    private void validateParentAndName(FsNode parent, String name) {
+        if (parent == null || !parent.isDirectory()) throw new IllegalArgumentException("Selecione um diretório válido.");
+        if (name == null || name.isBlank() || name.contains("/") || name.contains("\\")) throw new IllegalArgumentException("Informe um nome válido, sem barras.");
+        String normalized = name.trim();
+        if (parent.getChildren().stream().anyMatch(child -> child.getName().equalsIgnoreCase(normalized))) throw new IllegalArgumentException("Já existe um item com esse nome na pasta.");
+    }
+    private List<Integer> findFreeBlocks(int count) {
+        List<Integer> result = new ArrayList<>();
+        for (int i = 0; i < bitmap.length && result.size() < count; i++) if (!bitmap[i]) result.add(i);
+        return result.size() == count ? result : null;
+    }
+    private List<Integer> findContiguousBlocks(int count) {
+        if (count == 0) return new ArrayList<>();
+        int run = 0;
+        for (int i = 0; i < bitmap.length; i++) {
+            run = bitmap[i] ? 0 : run + 1;
+            if (run == count) { List<Integer> result = new ArrayList<>(); for (int b = i - count + 1; b <= i; b++) result.add(b); return result; }
+        }
+        return null;
+    }
+    private User findUser(String username) {
+        if (username == null) return null;
+        return users.stream().filter(user -> user.username().equalsIgnoreCase(username.trim())).findFirst().orElse(null);
+    }
+    private void grantDefaultPermissions(FsNode node, User user) {
+        if (!node.isDirectory()) node.setPermissions(user, EnumSet.allOf(Permission.class));
+        for (FsNode child : node.getChildren()) grantDefaultPermissions(child, user);
+    }
+    private void ensureDeletePermission(FsNode node) {
+        if (!node.isDirectory() && !node.hasPermission(currentUser, Permission.DELETE)) throw new IllegalStateException("O usuário atual não possui permissão para excluir " + node.getName() + ".");
+        for (FsNode child : node.getChildren()) ensureDeletePermission(child);
+    }
+    private void releaseRecursively(FsNode node) {
+        for (FsNode child : new ArrayList<>(node.getChildren())) releaseRecursively(child);
+        for (int block : node.getBlocks()) bitmap[block] = false;
+        if (node.getIndexBlock() != null) bitmap[node.getIndexBlock()] = false;
+    }
+
+    private void releaseFileBlocks(FsNode file) {
+        for (int block : file.getBlocks()) bitmap[block] = false;
+        if (file.getIndexBlock() != null) bitmap[file.getIndexBlock()] = false;
+        file.clearBlocks();
+        file.setIndexBlock(null);
+    }
+
+    private void allocateBlocks(FsNode file, int sizeBytes, AllocationStrategy strategy) {
+        long dataCountLong = sizeBytes == 0 ? 0 : ((long) sizeBytes + blockSize - 1) / blockSize;
+        long requiredLong = dataCountLong + (strategy == AllocationStrategy.INDEXED ? 1 : 0);
+        if (requiredLong > getFreeBlocks()) throw new IllegalStateException("Não há blocos livres suficientes.");
+        int dataCount = (int) dataCountLong;
+        int required = (int) requiredLong;
+        List<Integer> allocated = strategy == AllocationStrategy.CONTIGUOUS
+                ? findContiguousBlocks(dataCount)
+                : findFreeBlocks(required);
+        if (allocated == null) throw new IllegalStateException("Não existe uma sequência contígua de blocos livres suficiente.");
+        if (strategy == AllocationStrategy.INDEXED) {
+            file.setIndexBlock(allocated.remove(0));
+            bitmap[file.getIndexBlock()] = true;
+        }
+        for (int block : allocated) { bitmap[block] = true; file.addBlock(block); }
+    }
+    private void collectFiles(FsNode node, List<FsNode> files) {
+        if (!node.isDirectory()) { files.add(node); return; }
+        for (FsNode child : node.getChildren()) collectFiles(child, files);
+    }
 }
