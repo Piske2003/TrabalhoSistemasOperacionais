@@ -49,7 +49,6 @@ public final class VirtualFileSystem {
         User existing = findUser(candidate.username());
         if (existing != null) return existing;
         users.add(candidate);
-        grantDefaultPermissions(root, candidate);
         return candidate;
     }
 
@@ -90,7 +89,6 @@ public final class VirtualFileSystem {
             bitmap[file.getIndexBlock()] = true;
         }
         for (int block : allocated) { bitmap[block] = true; file.addBlock(block); }
-        for (User user : users) file.setPermissions(user, EnumSet.allOf(Permission.class));
         parent.addChild(file);
         return file;
     }
@@ -191,10 +189,6 @@ public final class VirtualFileSystem {
     private User findUser(String username) {
         if (username == null) return null;
         return users.stream().filter(user -> user.username().equalsIgnoreCase(username.trim())).findFirst().orElse(null);
-    }
-    private void grantDefaultPermissions(FsNode node, User user) {
-        if (!node.isDirectory()) node.setPermissions(user, EnumSet.allOf(Permission.class));
-        for (FsNode child : node.getChildren()) grantDefaultPermissions(child, user);
     }
     private void ensureDeletePermission(FsNode node) {
         if (!node.isDirectory() && !node.hasPermission(currentUser, Permission.DELETE)) throw new IllegalStateException("O usuário atual não possui permissão para excluir " + node.getName() + ".");

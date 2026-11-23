@@ -74,7 +74,10 @@ class VirtualFileSystemTest {
         FsNode file = fs.createFile(fs.getRoot(), "a.txt", 10);
         User guest = fs.createUser("convidado");
 
-        assertTrue(file.hasPermission(guest, Permission.DELETE));
+        assertFalse(file.hasPermission(guest, Permission.READ));
+        assertFalse(file.hasPermission(guest, Permission.WRITE));
+        assertFalse(file.hasPermission(guest, Permission.EXECUTE));
+        assertFalse(file.hasPermission(guest, Permission.DELETE));
         fs.assignPermissions(file, guest, java.util.Set.of(Permission.READ));
 
         assertEquals(owner, file.getOwner());
@@ -82,6 +85,37 @@ class VirtualFileSystemTest {
         assertFalse(file.hasPermission(guest, Permission.WRITE));
         assertFalse(file.hasPermission(guest, Permission.DELETE));
         assertTrue(file.hasPermission(owner, Permission.EXECUTE));
+    }
+
+    @Test void permissionsAreRestrictedToTheSelectedFile() {
+        VirtualFileSystem fs = new VirtualFileSystem(8, 1024);
+        User owner = fs.getCurrentUser();
+        User guest = fs.createUser("convidado");
+        FsNode allowedFile = fs.createFile(fs.getRoot(), "permitido.txt", 10);
+        FsNode restrictedFile = fs.createFile(fs.getRoot(), "restrito.txt", 10);
+
+        fs.assignPermissions(allowedFile, guest, java.util.Set.of(Permission.WRITE));
+        fs.setCurrentUser(guest);
+
+        assertTrue(allowedFile.hasPermission(guest, Permission.WRITE));
+        assertFalse(restrictedFile.hasPermission(guest, Permission.WRITE));
+        assertDoesNotThrow(() -> fs.resizeFile(allowedFile, 20));
+        assertThrows(IllegalStateException.class, () -> fs.resizeFile(restrictedFile, 20));
+        assertEquals(10, restrictedFile.getSizeBytes());
+
+        fs.setCurrentUser(owner);
+        assertTrue(restrictedFile.hasPermission(owner, Permission.WRITE));
+    }
+
+    @Test void newUsersDoNotReceivePermissionsOnExistingFiles() {
+        VirtualFileSystem fs = new VirtualFileSystem(8, 1024);
+        FsNode file = fs.createFile(fs.getRoot(), "privado.txt", 10);
+
+        User newUser = fs.createUser("novo");
+
+        for (Permission permission : Permission.values()) {
+            assertFalse(file.hasPermission(newUser, permission));
+        }
     }
     @Test void onlyFileCreatorCanChangePermissions() {
         VirtualFileSystem fs = new VirtualFileSystem(8, 1024);

@@ -85,7 +85,6 @@ public class FileSystemController {
 
         Button folder = createTechButton("+ Nova Pasta");
         Button file = createTechButton("+ Novo Arquivo");
-        Button resizeFile = createTechButton("Alterar Tamanho do Arquivo");
         Button permissions = createTechButton("Atribuir Permissões");
         Button delete = createTechButton("Excluir Selecionado");
         Button defragment = createTechButton("Desfragmentar Blocos");
@@ -103,7 +102,6 @@ public class FileSystemController {
 
         folder.setOnAction(e -> createDirectory());
         file.setOnAction(e -> createFile());
-        resizeFile.setOnAction(e -> resizeSelectedFile());
         delete.setOnAction(e -> deleteSelected());
         defragment.setOnAction(e -> defragment());
         permissions.setOnAction(e -> assignPermissions());
@@ -112,7 +110,7 @@ public class FileSystemController {
         stratLabel.setFont(Font.font("Consolas", 11));
         stratLabel.setStyle("-fx-text-fill: #8b949e;");
 
-        left.getChildren().addAll(treeTitle, tree, stratLabel, allocationStrategy, folder, file, resizeFile, permissions, delete, defragment);
+        left.getChildren().addAll(treeTitle, tree, stratLabel, allocationStrategy, folder, file, permissions, delete, defragment);
 
         // Painel Direito (Grid de Blocos do Disco e Logs/Detalhes)
         VBox right = new VBox(12);
@@ -248,36 +246,6 @@ public class FileSystemController {
                 refreshTree(parent);
                 refreshDisk();
                 status.setText(">>> Arquivo alocado com sucesso: " + input.name);
-            } catch (Exception ex) {
-                error(ex.getMessage());
-            }
-        });
-    }
-
-    private void resizeSelectedFile() {
-        TreeItem<FsNode> item = tree.getSelectionModel().getSelectedItem();
-        if (item == null || item.getValue().isDirectory()) {
-            error("Selecione um arquivo para alterar o tamanho.");
-            return;
-        }
-
-        FsNode file = item.getValue();
-        TextInputDialog dialog = new TextInputDialog(String.valueOf(file.getSizeBytes()));
-        dialog.setTitle("Alterar tamanho do arquivo");
-        dialog.setHeaderText("Arquivo: " + file.getName());
-        dialog.setContentText("Novo tamanho (bytes):");
-        dialog.showAndWait().ifPresent(value -> {
-            try {
-                int previousSize = file.getSizeBytes();
-                int newSize = Integer.parseInt(value.trim());
-                fs.resizeFile(file, newSize);
-                refreshTree(file);
-                showDetails(file);
-                refreshDisk(file);
-                status.setText(">>> Tamanho de " + file.getName() + " alterado de "
-                        + previousSize + " para " + newSize + " bytes. Blocos realocados.");
-            } catch (NumberFormatException ex) {
-                error("Informe um tamanho inteiro válido em bytes.");
             } catch (Exception ex) {
                 error(ex.getMessage());
             }
